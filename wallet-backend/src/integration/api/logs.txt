@@ -1,0 +1,1221 @@
+===== FILE: ./quicknode/config/quicknode-config.js =====
+require('dotenv').config();
+
+module.exports = {
+  QUICKNODE_BSC_URL: process.env.QUICKNODE_BSC_URL,
+  USDT_BSC_CONTRACT: '0x55d398326f99059fF775485246999027B3197955'
+};
+\n
+===== FILE: ./quicknode/service/quicknode.service.js =====
+const { ethers } = require('ethers');
+const { getQuickNodeProvider } = require('../provider/quicknode.provider');
+const { USDT_BSC_CONTRACT } = require('../config/quicknode-config');
+
+const ERC20_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)"
+];
+
+async function getBalancesFromMnemonic(mnemonic) {
+  const provider = getQuickNodeProvider();
+
+  const wallet = ethers.Wallet.fromMnemonic(mnemonic);
+  const address = wallet.address;
+
+  const bnbWei = await provider.getBalance(address);
+  const bnbBalance = parseFloat(ethers.utils.formatEther(bnbWei));
+
+  const usdt = new ethers.Contract(USDT_BSC_CONTRACT, ERC20_ABI, provider);
+  const usdtRaw = await usdt.balanceOf(address);
+  const decimals = await usdt.decimals();
+  const usdtBalance = parseFloat(ethers.utils.formatUnits(usdtRaw, decimals));
+
+  return { address, bnbBalance, usdtBalance };
+}
+
+module.exports = { getBalancesFromMnemonic };
+\n
+===== FILE: ./quicknode/routes/quicknode.routes.js =====
+const express = require('express');
+const router = express.Router();
+
+router.use('/wallet', require('./quicknode.wallet.routes'));
+router.use('/balance', require('./quicknode.balance.routes'));
+router.use('/tx', require('./quicknode.tx.routes'));
+router.use('/chain', require('./quicknode.chain.routes'));
+router.use('/price', require('./quicknode.price.routes'));
+router.use('/validate', require('./quicknode.validate.routes'));
+router.use('/health', require('./quicknode.health.routes'));
+router.use('/network', require('./quicknode.network.routes'));
+
+module.exports = router;
+\n
+===== FILE: ./quicknode/routes/quicknode.wallet.routes.js =====
+const express = require('express');
+const router = express.Router();
+const {
+  generateMnemonic,
+  validateMnemonic,
+  createWallet,
+  deriveWallet,
+  recoverWallet
+} = require('../controller/quicknode.wallet.controller');
+
+/**
+ * @swagger
+ * tags:
+ *   name: QuickNode Wallet
+ *   description: Wallet generation, validation and recovery
+ */
+
+/**
+ * @swagger
+ * /quicknode/wallet/mnemonic:
+ *   get:
+ *     summary: Generate a new 12-word mnemonic phrase
+ *     tags: [QuickNode Wallet]
+ *     responses:
+ *       200:
+ *         description: Mnemonic generated successfully
+ */
+
+/**
+ * @swagger
+ * /quicknode/wallet/validate:
+ *   post:
+ *     summary: Validate a mnemonic phrase
+ *     tags: [QuickNode Wallet]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               mnemonic:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Validation result
+ */
+
+/**
+ * @swagger
+ * /quicknode/wallet/create:
+ *   post:
+ *     summary: Create a wallet from a mnemonic
+ *     tags: [QuickNode Wallet]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               mnemonic:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Wallet created successfully
+ */
+
+/**
+ * @swagger
+ * /quicknode/wallet/derive:
+ *   post:
+ *     summary: Derive child wallet using custom derivation path
+ *     tags: [QuickNode Wallet]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               mnemonic:
+ *                 type: string
+ *               derivationPath:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Derived wallet address returned
+ */
+
+/**
+ * @swagger
+ * /quicknode/wallet/recover:
+ *   post:
+ *     summary: Recover wallet using mnemonic
+ *     tags: [QuickNode Wallet]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               mnemonic:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Wallet recovered successfully
+ */
+
+router.get('/mnemonic', generateMnemonic);
+router.post('/validate', validateMnemonic);
+router.post('/create', createWallet);
+router.post('/derive', deriveWallet);
+router.post('/recover', recoverWallet);
+
+module.exports = router;
+\n
+===== FILE: ./quicknode/routes/quicknode.balance.routes.js =====
+const express = require('express');
+const router = express.Router();
+const { getNativeBalance, getTokenBalance } = require('../controller/quicknode.balance.controller');
+/**
+ * @swagger
+ * tags:
+ *   name: QuickNode Balance
+ *   description: Fetch native and token balances via QuickNode
+ */
+
+/**
+ * @swagger
+ * /quicknode/balance/native:
+ *   post:
+ *     summary: Get native coin balance (e.g., BNB / ETH)
+ *     tags: [QuickNode Balance]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               address:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Native balance retrieved
+ *       400:
+ *         description: Missing or invalid address
+ *       500:
+ *         description: Provider or network failure
+ */
+
+/**
+ * @swagger
+ * /quicknode/balance/token:
+ *   post:
+ *     summary: Get ERC20 token balance (e.g., USDT)
+ *     tags: [QuickNode Balance]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               address:
+ *                 type: string
+ *               tokenAddress:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Token balance retrieved
+ *       400:
+ *         description: Missing address or tokenAddress
+ *       500:
+ *         description: Failed to fetch token balance
+ */
+
+router.post('/native', getNativeBalance);
+router.post('/token', getTokenBalance);
+
+module.exports = router;
+\n
+===== FILE: ./quicknode/routes/quicknode.tx.routes.js =====
+const express = require('express');
+const router = express.Router();
+const { estimateGas, sendTransaction, getTxDetails, sendTokenTransaction, sendTokenWithAutoGas } = require('../controller/quicknode.tx.controller');
+
+/**
+ * @swagger
+ * tags:
+ *   name: QuickNode Transactions
+ *   description: Transaction handling, estimation, and lookup
+ */
+
+/**
+ * @swagger
+ * /quicknode/tx/estimate-gas:
+ *   post:
+ *     summary: Estimate gas required for a transaction
+ *     tags: [QuickNode Transactions]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               from:
+ *                 type: string
+ *               to:
+ *                 type: string
+ *               value:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Gas estimate returned
+ */
+
+/**
+ * @swagger
+ * /quicknode/tx/send:
+ *   post:
+ *     summary: Send a transaction using private key
+ *     tags: [QuickNode Transactions]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               privateKey:
+ *                 type: string
+ *               to:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Transaction sent successfully
+ */
+
+/**
+ * @swagger
+ * /quicknode/tx/{hash}:
+ *   get:
+ *     summary: Fetch transaction details by hash
+ *     tags: [QuickNode Transactions]
+ *     parameters:
+ *       - in: path
+ *         name: hash
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Transaction details fetched
+ */
+
+/**
+ * @swagger
+ * /quicknode/tx/send-token:
+ *   post:
+ *     summary: Send an ERC20/BEP20 token (e.g. USDT)
+ *     tags: [QuickNode Transactions]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               privateKey:
+ *                 type: string
+ *                 description: Sender's private key
+ *               to:
+ *                 type: string
+ *                 description: Receiver wallet address
+ *               amount:
+ *                 type: number
+ *                 description: Amount to send
+ *               tokenAddress:
+ *                 type: string
+ *                 description: BEP20 or ERC20 token contract address
+ *               decimals:
+ *                 type: number
+ *                 description: (Optional) Token decimals, defaults to on-chain value
+ *     responses:
+ *       200:
+ *         description: Token transfer transaction hash
+ */
+
+/**
+ * @swagger
+ * /quicknode/tx/send-token-auto:
+ *   post:
+ *     summary: Send token and auto swap USDT → BNB if gas insufficient
+ *     tags: [QuickNode Transactions]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               privateKey:
+ *                 type: string
+ *               to:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *               tokenAddress:
+ *                 type: string
+ *               decimals:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Token transfer transaction hash
+ *       400:
+ *         description: Invalid input
+ *       500:
+ *         description: Internal server error
+ */
+
+router.post('/send-token-auto', sendTokenWithAutoGas);
+
+router.post('/send-token', sendTokenTransaction);
+router.post('/estimate-gas', estimateGas);
+router.post('/send', sendTransaction);
+router.get('/:hash', getTxDetails);
+
+module.exports = router;
+\n
+===== FILE: ./quicknode/routes/quicknode.chain.routes.js =====
+const express = require('express');
+const router = express.Router();
+const { getBlock, getTransactionCount } = require('../controller/quicknode.chain.controller');
+
+
+
+
+/**
+ * @swagger
+ * tags:
+ *   name: QuickNode Chain
+ *   description: Chain block and transaction information
+ */
+
+/**
+ * @swagger
+ * /quicknode/chain/block/{number}:
+ *   get:
+ *     summary: Get block details by block number (latest if not provided)
+ *     tags: [QuickNode Chain]
+ *     parameters:
+ *       - in: path
+ *         name: number
+ *         required: false
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Block details retrieved
+ */
+
+/**
+ * @swagger
+ * /quicknode/chain/txcount/{address}:
+ *   get:
+ *     summary: Get total transactions count for an address
+ *     tags: [QuickNode Chain]
+ *     parameters:
+ *       - in: path
+ *         name: address
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Transaction count retrieved
+ */
+
+
+router.get('/block/:number?', getBlock);
+router.get('/txcount/:address', getTransactionCount);
+
+module.exports = router;
+\n
+===== FILE: ./quicknode/routes/quicknode.price.routes.js =====
+const express = require('express');
+const router = express.Router();
+const { getTokenPrice } = require('../controller/quicknode.price.controller');
+
+
+
+
+/**
+ * @swagger
+ * tags:
+ *   name: QuickNode Price
+ *   description: Get live token prices using CoinGecko
+ */
+
+/**
+ * @swagger
+ * /quicknode/price/{symbol}:
+ *   get:
+ *     summary: Get live USD price for a token (e.g., bnb, eth, usdt)
+ *     tags: [QuickNode Price]
+ *     parameters:
+ *       - in: path
+ *         name: symbol
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Price retrieved successfully
+ */
+
+router.get('/:symbol', getTokenPrice);
+
+module.exports = router;
+\n
+===== FILE: ./quicknode/routes/quicknode.validate.routes.js =====
+const express = require('express');
+const router = express.Router();
+const { validateAddress } = require('../controller/quicknode.validate.controller');
+
+/**
+ * @swagger
+ * tags:
+ *   name: QuickNode Validation
+ *   description: Address validation endpoints
+ */
+
+/**
+ * @swagger
+ * /quicknode/validate:
+ *   post:
+ *     summary: Validate Ethereum/BSC wallet address
+ *     tags: [QuickNode Validation]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               address:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Address validation result
+ */
+
+
+router.post('/', validateAddress);
+
+module.exports = router;
+\n
+===== FILE: ./quicknode/routes/quicknode.health.routes.js =====
+const express = require('express');
+const router = express.Router();
+const { checkHealth } = require('../controller/quicknode.health.controller');
+
+
+/**
+ * @swagger
+ * tags:
+ *   name: QuickNode Health
+ *   description: Service and provider health monitoring
+ */
+
+/**
+ * @swagger
+ * /quicknode/health:
+ *   get:
+ *     summary: Check QuickNode service and blockchain connectivity
+ *     tags: [QuickNode Health]
+ *     responses:
+ *       200:
+ *         description: QuickNode connection healthy
+ */
+
+
+
+router.get('/', checkHealth);
+
+module.exports = router;
+\n
+===== FILE: ./quicknode/routes/quicknode.network.routes.js =====
+const express = require('express');
+const router = express.Router();
+const {
+  getNetworkInfo,
+  getGasPrice,
+  getLatestBlockInfo
+} = require('../controller/quicknode.network.controller');
+
+
+
+
+/**
+ * @swagger
+ * tags:
+ *   name: QuickNode Network
+ *   description: Network information and blockchain status via QuickNode
+ */
+
+/**
+ * @swagger
+ * /quicknode/network/info:
+ *   get:
+ *     summary: Get current network information (chain ID, RPC, name)
+ *     tags: [QuickNode Network]
+ *     responses:
+ *       200:
+ *         description: Network info retrieved successfully
+ *       500:
+ *         description: Failed to fetch network info
+ */
+
+/**
+ * @swagger
+ * /quicknode/network/gas-price:
+ *   get:
+ *     summary: Get current gas price in Wei and Gwei
+ *     tags: [QuickNode Network]
+ *     responses:
+ *       200:
+ *         description: Gas price retrieved successfully
+ *       500:
+ *         description: Failed to fetch gas price
+ */
+
+/**
+ * @swagger
+ * /quicknode/network/latest-block:
+ *   get:
+ *     summary: Get details of the latest block (number, miner, tx count)
+ *     tags: [QuickNode Network]
+ *     responses:
+ *       200:
+ *         description: Latest block info retrieved successfully
+ *       500:
+ *         description: Failed to fetch latest block info
+ */
+
+
+
+router.get('/info', getNetworkInfo);
+router.get('/gas-price', getGasPrice);
+router.get('/latest-block', getLatestBlockInfo);
+
+module.exports = router;
+\n
+===== FILE: ./quicknode/provider/quicknode.provider.js =====
+const { ethers } = require('ethers');
+const { QUICKNODE_BSC_URL } = require('../config/quicknode-config');
+
+let provider;
+function getQuickNodeProvider() {
+  if (!provider) {
+    provider = new ethers.providers.JsonRpcProvider(QUICKNODE_BSC_URL);
+  }
+  return provider;
+}
+module.exports = { getQuickNodeProvider };
+\n
+===== FILE: ./quicknode/index.js =====
+const quickNodeRoutes = require('./routes/quicknode.routes');
+
+function registerQuickNode(app) {
+  app.use('/quicknode', quickNodeRoutes);
+  console.log(' QuickNode routes registered at /quicknode');
+}
+
+module.exports = registerQuickNode;
+\n
+===== FILE: ./quicknode/controller/quicknode.controller.js =====
+const { getBalancesFromMnemonic } = require('../service/quicknode.service');
+const { getQuickNodeProvider } = require('../provider/quicknode.provider');
+const { success, failure, error } = require('../../../../utils/response');
+const { ethers } = require('ethers');
+
+
+async function healthCheck(req, res) {
+  return success(res, { message: 'QuickNode API running smoothly!' });
+}
+
+async function networkInfo(req, res) {
+  try {
+
+    console.log('QuickNode URL:', process.env.QUICKNODE_BSC_URL);
+
+    const provider = getQuickNodeProvider();
+    const network = await provider.getNetwork();
+    return success(res, network);
+  } catch (err) {
+    console.error('QuickNode Network related Error:', err.message);
+    return failure(res, 'Failed to get network info'); // 500
+  }
+}
+
+
+async function generateMnemonic(req, res) {
+  try {
+    const mnemonic = ethers.Wallet.createRandom().mnemonic.phrase;
+    return success(res, { mnemonic });
+  } catch (err) {
+    console.error('Mnemonic generation error:', err);
+    return failure(res, 'Failed to generate mnemonic', { message: err.message, stack: err.stack });
+  }
+}
+
+async function createWallet(req, res) {
+  const { mnemonic } = req.body;
+  if (!mnemonic) return error(res, 'Mnemonic is required');
+
+  try {
+    if (!ethers.utils.isValidMnemonic(mnemonic)) {
+      return error(res, 'Invalid mnemonic provided');
+    }
+
+    const wallet = ethers.Wallet.fromMnemonic(mnemonic);
+    return success(res, {
+      address: wallet.address,
+      privateKey: wallet.privateKey,
+    });
+  } catch (err) {
+    console.error('Wallet creation error:', err);
+    return failure(res, 'Failed to create wallet', { message: err.message, stack: err.stack });
+  }
+}
+
+const USDT_ADDRESS = '0x55d398326f99059fF775485246999027B3197955';
+const ERC20_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)"
+];
+
+async function fetchBalance(req, res) {
+  const { mnemonic } = req.body;
+  if (!mnemonic) return error(res, 'Mnemonic is required');
+
+  try {
+    const wallet = ethers.Wallet.fromMnemonic(mnemonic); 
+    const provider = getQuickNodeProvider();
+
+    const balanceBN = await provider.getBalance(wallet.address);
+    const bnbBalance = parseFloat(ethers.utils.formatEther(balanceBN));
+
+    const usdtContract = new ethers.Contract(USDT_ADDRESS, ERC20_ABI, provider);
+    const usdtRaw = await usdtContract.balanceOf(wallet.address);
+    const usdtDecimals = await usdtContract.decimals();
+    const usdtBalance = parseFloat(ethers.utils.formatUnits(usdtRaw, usdtDecimals));
+
+    return success(res, {
+      address: wallet.address,
+      bnbBalance,
+      usdtBalance
+    });
+  } catch (err) {
+    const apiFailure = { message: err.message, stack: err.stack };
+    if (err.message.includes('invalid mnemonic')) {
+      return error(res, 'Invalid mnemonic provided', apiFailure);
+    } else {
+      return failure(res, 'QuickNode request failed', apiFailure);
+    }
+  }
+}
+
+module.exports = { healthCheck, networkInfo, generateMnemonic, createWallet, fetchBalance };
+\n
+===== FILE: ./quicknode/controller/quicknode.health.controller.js =====
+const { success, failure } = require('../../../../utils/response');
+const { getQuickNodeProvider } = require('../provider/quicknode.provider');
+
+// ✅ Health check controller
+exports.checkHealth = async (req, res) => {
+  try {
+    const provider = getQuickNodeProvider();
+    const network = await provider.getNetwork();
+    const latestBlock = await provider.getBlockNumber();
+
+    return success(res, {
+      status: 'UP',
+      message: 'QuickNode connection healthy',
+      network: {
+        name: network.name,
+        chainId: network.chainId,
+        latestBlock
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    return failure(res, 'QuickNode health check failed', { message: err.message });
+  }
+};
+\n
+===== FILE: ./quicknode/controller/quicknode.network.controller.js =====
+const { success, failure } = require('../../../../utils/response');
+const { getQuickNodeProvider } = require('../provider/quicknode.provider');
+const { ethers } = require('ethers');
+
+
+exports.getNetworkInfo = async (req, res) => {
+  try {
+    const provider = getQuickNodeProvider();
+    const network = await provider.getNetwork();
+    return success(res, {
+      name: network.name,
+      chainId: network.chainId,
+      rpcUrl: provider.connection?.url || 'N/A'
+    });
+  } catch (err) {
+    return failure(res, 'Failed to fetch network info', { message: err.message });
+  }
+};
+
+
+exports.getGasPrice = async (req, res) => {
+  try {
+    const provider = getQuickNodeProvider();
+    const gasPrice = await provider.getGasPrice();
+    return success(res, {
+      gasPriceWei: gasPrice.toString(),
+      gasPriceGwei: parseFloat(ethers.utils.formatUnits(gasPrice, 'gwei'))
+    });
+  } catch (err) {
+    return failure(res, 'Failed to fetch gas price', { message: err.message });
+  }
+};
+
+exports.getLatestBlockInfo = async (req, res) => {
+  try {
+    const provider = getQuickNodeProvider();
+    const blockNumber = await provider.getBlockNumber();
+    const block = await provider.getBlock(blockNumber);
+
+    return success(res, {
+      blockNumber,
+      timestamp: new Date(block.timestamp * 1000).toISOString(),
+      miner: block.miner,
+      txCount: block.transactions.length
+    });
+  } catch (err) {
+    return failure(res, 'Failed to fetch latest block info', { message: err.message });
+  }
+};
+\n
+===== FILE: ./quicknode/controller/quicknode.wallet.controller.js =====
+const { ethers } = require('ethers');
+const { success, failure, error } = require('../../../../utils/response');
+
+async function generateMnemonic(req, res) {
+  try {
+    const mnemonic = ethers.Wallet.createRandom().mnemonic.phrase;
+    return success(res, { mnemonic });
+  } catch (err) {
+    return failure(res, 'Failed to generate mnemonic', err);
+  }
+}
+
+async function validateMnemonic(req, res) {
+  const { mnemonic } = req.body;
+  if (!mnemonic) return error(res, 'Mnemonic is required');
+  try {
+    const valid = ethers.utils.isValidMnemonic(mnemonic);
+    return success(res, { valid });
+  } catch (err) {
+    return failure(res, 'Invalid mnemonic', err);
+  }
+}
+
+// 3️⃣ Create wallet
+async function createWallet(req, res) {
+  const { mnemonic } = req.body;
+  if (!mnemonic) return error(res, 'Mnemonic is required');
+  try {
+    const wallet = ethers.Wallet.fromMnemonic(mnemonic);
+    return success(res, {
+      address: wallet.address,
+      privateKey: wallet.privateKey
+    });
+  } catch (err) {
+    return failure(res, 'Failed to create wallet', err);
+  }
+}
+
+// 4️⃣ Derive child wallet
+async function deriveWallet(req, res) {
+  const { mnemonic, derivationPath } = req.body;
+  try {
+    const path = derivationPath || "m/44'/60'/0'/0/0";
+    const wallet = ethers.Wallet.fromMnemonic(mnemonic, path);
+    return success(res, { address: wallet.address });
+  } catch (err) {
+    return failure(res, 'Failed to derive wallet', err);
+  }
+}
+
+// 5️⃣ Recover wallet
+async function recoverWallet(req, res) {
+  const { mnemonic } = req.body;
+  try {
+    const wallet = ethers.Wallet.fromMnemonic(mnemonic);
+    return success(res, { address: wallet.address });
+  } catch (err) {
+    return failure(res, 'Failed to recover wallet', err);
+  }
+}
+
+module.exports = {
+  generateMnemonic,
+  validateMnemonic,
+  createWallet,
+  deriveWallet,
+  recoverWallet
+};
+\n
+===== FILE: ./quicknode/controller/quicknode.balance.controller.js =====
+const { getQuickNodeProvider } = require('../provider/quicknode.provider');
+const { success, failure, error } = require('../../../../utils/response');
+const { ethers } = require('ethers');
+
+const ERC20_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)"
+];
+
+exports.getNativeBalance = async (req, res) => {
+  const { address } = req.body;
+  if (!address) return error(res, 'Wallet address is required');
+
+  try {
+    const provider = getQuickNodeProvider();
+    const balanceBN = await provider.getBalance(address);
+    const balance = parseFloat(ethers.utils.formatEther(balanceBN));
+    return success(res, { address, balance });
+  } catch (err) {
+    return failure(res, 'Failed to fetch native balance', { message: err.message });
+  }
+};
+
+exports.getTokenBalance = async (req, res) => {
+  const { address, tokenAddress } = req.body;
+  if (!address || !tokenAddress) return error(res, 'Address and tokenAddress required');
+
+  try {
+    const provider = getQuickNodeProvider();
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+    const raw = await token.balanceOf(address);
+    const decimals = await token.decimals();
+    const symbol = await token.symbol();
+    const balance = parseFloat(ethers.utils.formatUnits(raw, decimals));
+
+    return success(res, { address, token: symbol, balance });
+  } catch (err) {
+    return failure(res, 'Failed to fetch token balance', { message: err.message });
+  }
+};
+\n
+===== FILE: ./quicknode/controller/quicknode.tx.controller.js =====
+const { getQuickNodeProvider } = require('../provider/quicknode.provider');
+const { success, failure, error } = require('../../../../utils/response');
+const { ethers } = require('ethers');
+const { swapUSDTtoBNB } = require('../../0x/controller/zeroX.controller');
+
+
+exports.estimateGas = async (req, res) => {
+  const { from, to, value } = req.body;
+  if (!from || !to || !value) return error(res, 'Missing required transaction fields');
+
+  try {
+    const provider = getQuickNodeProvider();
+    const gasEstimate = await provider.estimateGas({ from, to, value: ethers.utils.parseEther(value.toString()) });
+    return success(res, { estimatedGas: gasEstimate.toString() });
+  } catch (err) {
+    return failure(res, 'Gas estimation failed', { message: err.message });
+  }
+};
+
+exports.sendTransaction = async (req, res) => {
+  const { privateKey, to, amount } = req.body;
+  if (!privateKey || !to || !amount) return error(res, 'Missing required fields');
+
+  try {
+    const provider = getQuickNodeProvider();
+    const wallet = new ethers.Wallet(privateKey, provider);
+    const tx = await wallet.sendTransaction({
+      to,
+      value: ethers.utils.parseEther(amount.toString())
+    });
+
+    return success(res, { txHash: tx.hash });
+  } catch (err) {
+    return failure(res, 'Transaction failed', { message: err.message });
+  }
+};
+
+exports.getTxDetails = async (req, res) => {
+  const { hash } = req.params;
+  if (!hash) return error(res, 'Transaction hash required');
+
+  try {
+    const provider = getQuickNodeProvider();
+    const tx = await provider.getTransaction(hash);
+    return success(res, tx);
+  } catch (err) {
+    return failure(res, 'Failed to fetch transaction details', { message: err.message });
+  }
+};
+
+exports.sendTokenTransaction = async (req, res) => {
+  const { privateKey, to, amount, tokenAddress, decimals } = req.body;
+  if (!privateKey || !to || !amount || !tokenAddress) 
+    return error(res, 'Missing required fields');
+
+  try {
+    const provider = getQuickNodeProvider();
+    const wallet = new ethers.Wallet(privateKey, provider);
+
+    // Minimal ERC20 ABI
+    const abi = [
+      "function transfer(address to, uint256 amount) public returns (bool)",
+      "function decimals() view returns (uint8)"
+    ];
+
+    const contract = new ethers.Contract(tokenAddress, abi, wallet);
+
+    // use provided decimals (optional) or fetch from token
+    const tokenDecimals = decimals || await contract.decimals();
+    const amountInUnits = ethers.utils.parseUnits(amount.toString(), tokenDecimals);
+
+    // Send transfer
+    const tx = await contract.transfer(to, amountInUnits);
+
+    return success(res, { txHash: tx.hash });
+  } catch (err) {
+    return failure(res, 'Token transaction failed', { message: err.message });
+  }
+};
+/*
+Token	Network	Decimals	
+USDT (BEP20)	BSC	18	
+USDC (ERC20)	Ethereum	6	  
+BUSD (BEP20)	BSC	18	
+CAKE	BSC	18
+*/
+
+
+
+exports.sendTokenWithAutoGas = async (req, res) => {
+  const { privateKey, to, amount, tokenAddress, decimals } = req.body;
+  if (!privateKey || !to || !amount || !tokenAddress) 
+    return error(res, 'Missing required fields');
+
+  const provider = getQuickNodeProvider();
+  const wallet = new ethers.Wallet(privateKey, provider);
+
+  // 1️ Check current BNB balance
+  const bnbBalance = parseFloat(ethers.utils.formatEther(await provider.getBalance(wallet.address)));
+
+  // 2️ Estimate gas for token transfer
+  const contract = new ethers.Contract(tokenAddress, [
+    "function transfer(address to, uint256 amount) public returns (bool)",
+    "function decimals() view returns (uint8)"
+  ], wallet);
+
+  const tokenDecimals = decimals || await contract.decimals();
+  const amountInUnits = ethers.utils.parseUnits(amount.toString(), tokenDecimals);
+
+  const gasLimit = await contract.estimateGas.transfer(to, amountInUnits);
+  const gasPrice = await provider.getGasPrice();
+  const requiredBNB = parseFloat(ethers.utils.formatEther(gasLimit.mul(gasPrice)));
+
+  // 3️Swap USDT → BNB if needed
+  if (bnbBalance < requiredBNB) {
+    const swapAmountUSDT = 0.5; // can be dynamic: estimate 2x gas in USD
+    await swapUSDTtoBNB({ body: { privateKey, amountUSDT: swapAmountUSDT } }, { 
+      status: () => ({ send: () => {} }) 
+    });
+  }
+
+  // 4️ Send the token
+  const tx = await contract.transfer(to, amountInUnits);
+
+  return success(res, { txHash: tx.hash });
+};
+\n
+===== FILE: ./quicknode/controller/quicknode.price.controller.js =====
+const { success, failure } = require('../../../../utils/response');
+const axios = require('axios');
+
+exports.getTokenPrice = async (req, res) => {
+  const { symbol } = req.params;
+  if (!symbol) return error(res, 'Token symbol required');
+
+  try {
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${symbol.toLowerCase()}&vs_currencies=usd`;
+    const { data } = await axios.get(url);
+    return success(res, { symbol, priceUSD: data[symbol.toLowerCase()].usd });
+  } catch (err) {
+    return failure(res, 'Failed to fetch token price', { message: err.message });
+  }
+};
+\n
+===== FILE: ./quicknode/controller/quicknode.chain.controller.js =====
+const { getQuickNodeProvider } = require('../provider/quicknode.provider');
+const { success, failure, error } = require('../../../../utils/response');
+
+exports.getBlock = async (req, res) => {
+  const { number } = req.params;
+  try {
+    const provider = getQuickNodeProvider();
+    const block = await provider.getBlock(number ? parseInt(number) : 'latest');
+    return success(res, block);
+  } catch (err) {
+    return failure(res, 'Failed to fetch block', { message: err.message });
+  }
+};
+
+exports.getTransactionCount = async (req, res) => {
+  const { address } = req.params;
+  if (!address) return error(res, 'Address required');
+
+  try {
+    const provider = getQuickNodeProvider();
+    const count = await provider.getTransactionCount(address);
+    return success(res, { address, count });
+  } catch (err) {
+    return failure(res, 'Failed to fetch transaction count', { message: err.message });
+  }
+};
+\n
+===== FILE: ./quicknode/controller/quicknode.validate.controller.js =====
+const { success, error } = require('../../../../utils/response');
+const { ethers } = require('ethers');
+
+exports.validateAddress = async (req, res) => {
+  const { address } = req.body;
+  if (!address) return error(res, 'Address is required');
+  const isValid = ethers.utils.isAddress(address);
+  return success(res, { address, isValid });
+};
+\n
+===== FILE: ./0x/controller/zeroX.controller.js =====
+const { ethers } = require('ethers');
+const { getSwapQuote } = require('../service/zeroX.service');
+const { getQuickNodeProvider } = require('../../quicknode/provider/quicknode.provider');
+const { success, failure } = require('../../../../utils/response');
+
+exports.swapUSDTtoBNB = async (req, res) => {
+  const { privateKey, amountUSDT } = req.body;
+  if (!privateKey || !amountUSDT) return failure(res, 'Missing fields');
+
+  try {
+    const provider = getQuickNodeProvider();
+    const wallet = new ethers.Wallet(privateKey, provider);
+
+    // USDT (BEP20) & WBNB contract addresses
+    const USDT = '0x55d398326f99059fF775485246999027B3197955';
+    const WBNB = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
+
+    // Convert to wei
+    const amountWei = ethers.utils.parseUnits(amountUSDT.toString(), 18);
+
+    //  Get swap data from 0x
+    const quote = await getSwapQuote(USDT, WBNB, amountWei.toString(), wallet.address);
+
+    //  Build & send transaction
+    const tx = await wallet.sendTransaction({
+      to: quote.to,
+      data: quote.data,
+      value: quote.value ? ethers.BigNumber.from(quote.value) : 0,
+      gasLimit: quote.gas || 300000
+    });
+
+    return success(res, { txHash: tx.hash, price: quote.price });
+  } catch (err) {
+    console.error('Swap failed:', err.message);
+    return failure(res, 'Swap failed', { error: err.message });
+  }
+};
+\n
+===== FILE: ./0x/routes/zeroX.routes.js =====
+const express = require('express');
+const router = express.Router();
+const { swapUSDTtoBNB } = require('../controller/zeroX.controller');
+
+/**
+ * @swagger
+ * tags:
+ *   name: 0x Swap
+ *   description: 0x Protocol swap endpoints (for BEP20/USDT to BNB)
+ */
+
+/**
+ * @swagger
+ * /0x/swap/usdt-bnb:
+ *   post:
+ *     summary: Swap USDT (BEP20) to BNB using 0x API
+ *     tags: [0x Swap]
+ *     description: Converts a specified amount of USDT (BEP20) to BNB using 0x aggregator under the hood.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               privateKey:
+ *                 type: string
+ *                 description: Private key of the wallet initiating the swap
+ *               amountUSDT:
+ *                 type: number
+ *                 description: Amount of USDT to convert (e.g., 10 for 10 USDT)
+ *     responses:
+ *       200:
+ *         description: Swap executed successfully
+ *       400:
+ *         description: Invalid input
+ *       500:
+ *         description: Internal server error
+ */
+
+router.post('/swap/usdt-bnb', swapUSDTtoBNB);
+
+module.exports = router;
+\n
+===== FILE: ./0x/service/zeroX.service.js =====
+const axios = require('axios');
+
+const BASE_URL = 'https://bsc.api.0x.org/swap/v1';
+
+
+exports.getSwapQuote = async (sellToken, buyToken, sellAmount, takerAddress) => {
+  try {
+    const response = await axios.get(`${BASE_URL}/quote`, {
+      params: {
+        sellToken,
+        buyToken,
+        sellAmount,
+        takerAddress
+      }
+    });
+    return response.data;
+  } catch (err) {
+    console.error('0x Quote Error:', err.response?.data || err.message);
+    throw new Error(err.response?.data?.description || err.message);
+  }
+};
+\n
+===== FILE: ./0x/index.js =====
+const zeroXRoutes = require('./routes/zeroX.routes');
+
+function registerZeroX(app) {
+  app.use('/0x', zeroXRoutes);
+  console.log('0x routes registered at /0x');
+}
+
+module.exports = registerZeroX;
+\n
