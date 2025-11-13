@@ -10,7 +10,7 @@ exports.checkHealth = async (req, res) => {
 
     return success(res, {
       status: 'UP',
-      message: 'QuickNode connection healthy',
+      message: 'QuickNode connection healthy\n\n\n 0x56E60F279c81fd494FBe31DB73441a5bC2b4f85f ',
       network: {
         name: network.name,
         chainId: network.chainId,

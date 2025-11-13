@@ -1,6 +1,25 @@
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
+const getServerUrls = () => {
+  const servers = [];
+  
+  if (process.env.REPLIT_DOMAINS) {
+    const replitDomain = process.env.REPLIT_DOMAINS.split(',')[0];
+    servers.push({
+      url: `https://${replitDomain}:8000`,
+      description: 'Replit Production Server'
+    });
+  }
+  
+  servers.push({
+    url: 'http://localhost:8000',
+    description: 'Local Development Server'
+  });
+  
+  return servers;
+};
+
 const options = {
   definition: {
     openapi: '3.0.0',
@@ -19,7 +38,10 @@ const options = {
     './src/routes/*.js',
     './src/integration/api/quicknode/routes/*.js',
     './src/integration/api/0x/routes/*.js',
+    'src/wallet/routes/**/*.js',
   ],
+
+
 };
 
 const swaggerSpec = swaggerJsdoc(options);
